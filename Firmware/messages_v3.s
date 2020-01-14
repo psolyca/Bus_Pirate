@@ -158,7 +158,7 @@ _BPMSG1068_str:
 	.section .text.BPMSG1069, code
 	.global _BPMSG1069_str
 _BPMSG1069_str:
-	.pasciz " 0.Macro menu\r\n 1.7bit address search\r\n 2.I2C sniffer"
+	.pasciz " 0.Macro menu\r\n 1.7bit address search\r\n 2.I2C sniffer\r\n 5.I2C Debug Port"
 
 	; BPMSG1070
 	.section .text.BPMSG1070, code
@@ -1449,6 +1449,12 @@ _MSG_READ_HEADER_str:
 	.global _MSG_SNIFFER_MESSAGE_str
 _MSG_SNIFFER_MESSAGE_str:
 	.pasciz "Sniffer"
+
+	; I2C_DEBUG_PORT_MESSAGE
+	.section .text.I2C_DEBUG_PORT_MESSAGE, code
+	.global _MSG_I2C_DEBUG_PORT_MESSAGE_str
+_MSG_I2C_DEBUG_PORT_MESSAGE_str:
+	.pasciz "I2C Debug Port\r\nPress F12 to exit"
 
 	; MSG_SOFTWARE_MODE_SPEED_PROMPT
 	.section .text.MSG_SOFTWARE_MODE_SPEED_PROMPT, code

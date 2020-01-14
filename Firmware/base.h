@@ -3,6 +3,7 @@
  * (http://code.google.com/p/the-bus-pirate/).
  *
  * Written and maintained by the Bus Pirate project.
+ * I2C Debug Port feature contributed by Intel Corporation
  *
  * To the extent possible under law, the project has waived all copyright and
  * related or neighboring rights to Bus Pirate.  This work is published from
@@ -44,7 +45,7 @@
 /**
  * @brief Firmware version string, used at startup and for the 'i' command.
  */
-#define BP_FIRMWARE_STRING "Community Firmware v7.1 - goo.gl/gCzQnW "
+#define BP_FIRMWARE_STRING "Community Firmware v7.1 - goo.gl/gCzQnW\r\n"
 
 /**
  * @brief Current mode configuration settings structure.
