@@ -103,18 +103,16 @@ class HEX_File:
 
 	### Read the encoded file
 	def read(self, filename):
-		FILE = open(filename, 'r')
-		self.encoded = FILE.readlines()
-		FILE.close()
+		with open(filename, 'r') as FILE:
+			self.encoded = FILE.readlines()
 		self.decode()
 
 	### Write the encoded file
 	def write(self, filename):
 		self.encode()
-		FILE = open(filename, 'w')
-		for line in self.encoded:
-			FILE.write(line)
-		FILE.close()
+		with open(filename, 'w') as FILE:
+			for line in self.encoded:
+				FILE.write(line)
 
 	### Decode the encoded file into data
 	def decode(self):
@@ -373,7 +371,7 @@ class PIC24F_Prog:
 	### Read a byte (with retries) from the serial device
 	def ReadSer(self):
 		db = ""
-		for i in range(0, self.serial['retries']):
+		for _ in range(self.serial['retries']):
 			db = self.ser.read()
 			if len(db) != 0:
 				break
@@ -649,19 +647,15 @@ class PIC24F_Prog:
 		start_addr = self.device['pmrangelow']
 		while nBlocks > 0:
 			### Build the argument tree
-			args = {}
+			args = {'LEN': min(nBlocks, 255)}
 
-			if nBlocks > 255:
-				args['LEN'] = 255
-			else:
-				args['LEN'] = nBlocks
 			nBlocks -= args['LEN']
 			### Generate the address
 			addr = start_addr
 			args['ADDRL'] = addr & 0xFF
 			args['ADDRH'] = (addr >> 8) & 0xFF
 			args['ADDRU'] = (addr >> 16) & 0xFF
-			
+
 			self.BootloaderCMD("ER_FLASH", args)
 			start_addr += (self.device['eraseblock'] / self.device['bytesperaddr']) * nBlocks
 
@@ -675,15 +669,15 @@ class PIC24F_Prog:
 
 	### Write the config words into memory (shouldn't mess up other data if present?)
 	def WriteCFGWords(self, cfg_words):
-		### Write the config words
-		args = {}
-		args['LEN'] = 1
 		addr = (self.device['pmrangehigh'] + 1) - (self.device['eraseblock'] / self.device['bytesperaddr'])
-		args['ADDRL'] = addr & 0xFF
-		args['ADDRH'] = (addr >> 8) & 0xFF
-		args['ADDRU'] = (addr >> 16) & 0xFF
-		### Build the data packet
-		args['DATA'] = [0xFF, 0xFF, 0xFF, 0x00] * ((self.device['writeblock'] / 4) - 2)
+		args = {
+			'LEN': 1,
+			'ADDRL': addr & 0xFF,
+			'ADDRH': addr >> 8 & 0xFF,
+			'ADDRU': addr >> 16 & 0xFF,
+			'DATA': [0xFF, 0xFF, 0xFF, 0x00] * ((self.device['writeblock'] / 4) - 2),
+		}
+
 		for i in cfg_words:
 			args['DATA'].append(ord(i))
 		self.BootloaderCMD("WT_FLASH", args)

@@ -112,7 +112,7 @@ parser.add_argument('guard', metavar='GUARD', type=str,
 args = parser.parse_args()
 lines = get_messages(args.source)
 
-with open(args.outbase + '.s', 'w') as assembly_output:
+with open(f'{args.outbase}.s', 'w') as assembly_output:
     for row in sorted(lines):
         assembly_output.write('\t; %s\n' % row[0])
         assembly_output.write('\t.section .text.%s, code\n' % row[0])
@@ -121,18 +121,17 @@ with open(args.outbase + '.s', 'w') as assembly_output:
         assembly_output.write('\t.pasciz ')
         string_segments = []
         for character in row[2]:
-          if character in MAPPING_OUT:
-            if (len(string_segments) == 0) or (type(string_segments[-1]) != str):
-              string_segments.append(MAPPING_OUT[character])
+            if character in MAPPING_OUT:
+                if string_segments and type(string_segments[-1]) == str:
+                    string_segments[-1] += MAPPING_OUT[character]
+                else:
+                    string_segments.append(MAPPING_OUT[character])
+            elif (ord(character) < 0x20) or (ord(character) > 0x7E):
+              string_segments.append(ord(character))
+            elif not string_segments or type(string_segments[-1]) != str:
+                string_segments.append(character)
             else:
-              string_segments[-1] += MAPPING_OUT[character]
-          elif (ord(character) < 0x20) or (ord(character) > 0x7E):
-            string_segments.append(ord(character))
-          else:
-            if (len(string_segments) == 0) or (type(string_segments[-1]) != str):
-              string_segments.append(character)
-            else:
-              string_segments[-1] += character
+                string_segments[-1] += character
         for segment_index in range(len(string_segments)):
           segment = string_segments[segment_index]
           if type(segment) == str:
@@ -148,7 +147,7 @@ offset = 0
 BUFFER_WRITE_CALL = 'bp_message_write_buffer'
 LINE_WRITE_CALL = 'bp_message_write_line'
 
-with open(args.outbase + '.h', 'w') as header_output:
+with open(f'{args.outbase}.h', 'w') as header_output:
     header_output.write('#ifndef BP_MESSAGES_%s_H\n' % args.guard.upper())
     header_output.write('#define BP_MESSAGES_%s_H\n\n' % args.guard.upper())
 

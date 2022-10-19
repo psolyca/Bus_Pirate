@@ -24,10 +24,7 @@ import sys, optparse
 from pyBusPirateLite.SPI import *
 
 def read_list_data(size):
-	data = []
-	for i in range(size+1):
-		data.append(0)
-	return data
+	return [0 for _ in range(size+1)]
 
 def parse_prog_args():
 	parser = optparse.OptionParser(usage="%prog [options] filename",
@@ -62,16 +59,14 @@ def parse_prog_args():
 
 	(options, args) = parser.parse_args()
 
-	if options.command == "id":
+	if options.command == "id" or len(args) == 1:
 		return (options, args)
-	elif len(args) != 1:
-		parser.print_help()
-		print(options)
-		sys.exit(1)
-	else:
-		return (options, args)
+	parser.print_help()
+	print(options)
+	sys.exit(1)
 	
 """ enter binary mode """
+
 if __name__ == '__main__':
 	data = ""
 	(opt, args)  = parse_prog_args()
@@ -100,7 +95,7 @@ if __name__ == '__main__':
 	else:
 		print("failed.")
 		sys.exit()
-		
+
 	print("Configuring SPI peripherals: ")
 	if spi.cfg_pins(PinCfg.POWER | PinCfg.CS | PinCfg.AUX):
 		print("OK.")
@@ -125,7 +120,7 @@ if __name__ == '__main__':
 		print("Reading EEPROM.")
 		spi.CS_Low()
 		spi.bulk_trans(5, [0xB, 0, 0, 0, 0])
-		for i in range((int(opt.flash_size)/16)):
+		for _ in range((int(opt.flash_size)/16)):
 			data = spi.bulk_trans(16, read_list_data(16))
 			f.write(data)
 		spi.CS_High()
@@ -134,7 +129,7 @@ if __name__ == '__main__':
 		print("Writing EEPROM.")
 		spi.CS_Low()
 		spi.bulk_trans(4, [0xA, 0, 0, 0])
-		for i in range((int(opt.flash_size)/16)):
+		for _ in range((int(opt.flash_size)/16)):
 			spi.bulk_trans(16, None)
 		spi.CS_High()
 
@@ -146,9 +141,6 @@ if __name__ == '__main__':
 		for each in d[1:]:
 			print("%02X " % ord(each))
 		print
-
-	elif opt.command == "erase":
-		pass
 
 	print("Reset Bus Pirate to user terminal: ")
 	if spi.resetBP():
