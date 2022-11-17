@@ -116,7 +116,7 @@ uint16_t bitbang_read_value(void);
  *
  * @return true if the MISO pin is HIGH, false otherwise.
  */
-bool bitbang_read_bit(void);
+bool bitbang_read_bit(bool CLKStretch);
 
 /**
  * Writes the given bit to the bus via the MOSI pin.

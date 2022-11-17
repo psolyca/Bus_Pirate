@@ -192,7 +192,7 @@ uint16_t bitbang_read_value(void) {
 
   return value;
 }
-
+#if 0
 bool bitbang_read_bit(void) {
   bool bit_value;
 
@@ -210,6 +210,41 @@ bool bitbang_read_bit(void) {
 
   return bit_value;
 }
+#else
+#define I2C_SW_CLK_STRETCH_MAXWAIT_US 10000
+bool bitbang_read_bit(bool CLKStretch) {
+  bool bit_value, clk_value;
+  uint32_t max_wait;
+
+  /* Set the MISO pin as input. */
+  bitbang_read_pin(miso_pin);
+
+  /* Set CLK high. */
+  bitbang_set_pins_high(CLK, delay_profile->clock);
+
+  /* Wait for CLK to go high if desired*/
+  if(CLKStretch == true){
+      max_wait =0;
+      do{
+          clk_value = IOPOR & CLK; // check if clock is released by slave
+          if(clk_value != 0){
+              break; // clk signal released by slave, exit
+          }
+          bp_delay_us(1); // wait 1us
+          max_wait = max_wait + 1;
+
+      }while(max_wait < I2C_SW_CLK_STRETCH_MAXWAIT_US);
+  }
+
+  /* Read value. */
+  bit_value = bitbang_read_pin(miso_pin);
+
+  /* Set CLK low. */
+  bitbang_set_pins_low(CLK, delay_profile->clock);
+
+  return bit_value;
+}
+#endif
 
 void bitbang_write_bit(const bool state) {
   /* Set the output pin to the given state. */
