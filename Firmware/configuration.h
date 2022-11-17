@@ -379,12 +379,28 @@
 
 #ifdef BP_ENABLE_I2C_SUPPORT
 
+/**
+ * Enable usage of the on-board hardware I2C bus.
+*/
+
+#ifdef BUSPIRATEV3
+
+/**
+ * This is optional on Bus Pirate v3 hardware.
+ * PIC24FJ64GA002 revision A3 chips has a bug in the I2C hardware,
+ * do not enable it.
+ * http://dangerousprototypes.com/blog/2009/08/10/bus-pirate-hardware-i2c-added/
+ */
+#define BP_I2C_USE_HW_BUS
+
+#endif /* BUSPIRATEV3 */
+
 #ifdef BUSPIRATEV4
 
 /**
  * Enable usage of the on-board hardware I2C bus.
  *
- * This is mandatory on Bus Pirate v4 hardware, optional on v3.
+ * This is mandatory on Bus Pirate v4 hardware.
  */
 #define BP_I2C_USE_HW_BUS
 
@@ -422,7 +438,7 @@
 /**
  * Size of the tokens buffer allocate to the BASIC interpreter, in bytes.
  */
-#define BP_BASIC_PROGRAM_SPACE 1024
+#define BP_BASIC_PROGRAM_SPACE 512
 
 /**
  * Maximum number of nested FOR-LOOP statements the BASIC interpreter can
@@ -568,7 +584,7 @@
  * @warning This must be set to a power of two, ie. 256, 128, 64, 32, etc.
  */
 #ifdef BUSPIRATEV3
-#define BP_COMMAND_BUFFER_SIZE 128
+#define BP_COMMAND_BUFFER_SIZE 256
 #else
 #define BP_COMMAND_BUFFER_SIZE 256
 #endif /* BUSPIRATEV3 */
