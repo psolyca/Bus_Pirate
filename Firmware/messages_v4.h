@@ -515,6 +515,8 @@ void MSG_RESET_MESSAGE_str(void);
 #define MSG_RESET_MESSAGE bp_message_write_line(__builtin_tbladdress(MSG_RESET_MESSAGE_str))
 void MSG_SNIFFER_MESSAGE_str(void);
 #define MSG_SNIFFER_MESSAGE bp_message_write_line(__builtin_tbladdress(MSG_SNIFFER_MESSAGE_str))
+void MSG_I2C_DEBUG_PORT_MESSAGE_str(void);
+#define MSG_I2C_DEBUG_PORT_MESSAGE bp_message_write_line(__builtin_tbladdress(MSG_I2C_DEBUG_PORT_MESSAGE_str))
 void MSG_SOFTWARE_MODE_SPEED_PROMPT_str(void);
 #define MSG_SOFTWARE_MODE_SPEED_PROMPT bp_message_write_line(__builtin_tbladdress(MSG_SOFTWARE_MODE_SPEED_PROMPT_str))
 void MSG_SPI_COULD_NOT_KEEP_UP_str(void);

@@ -3,6 +3,7 @@
  * (https://github.com/BusPirate/Bus_Pirate/).
  *
  * Written and maintained by the Bus Pirate project.
+ * I2C Debug Port feature contributed by Intel Corporation
  *
  * To the extent possible under law, the project has waived all copyright and
  * related or neighboring rights to Bus Pirate. This work is published from
@@ -56,6 +57,18 @@
 #define I2C_SNIFFER_START '['
 #define I2C_SNIFFER_STOP ']'
 
+#define I2C_DEBUG_PORT_WRITE_DEVICE_ADDRESS 0xDE
+#define I2C_DEBUG_PORT_READ_DEVICE_ADDRESS 0xDF
+
+#define I2C_DEBUG_PORT_WRITE_COMMAND 0x00
+#define I2C_DEBUG_PORT_READ_COMMAND 0x01
+#define I2C_DEBUG_PORT_READY_TO_READ_COMMAND 0x02
+
+#define I2C_DEBUG_PORT_COMMAND_BIT_POSITION 5
+#define I2C_DEBUG_PORT_COMMAND_BIT_MASK 0x7
+#define I2C_DEBUG_PORT_DATA_SIZE_BIT_MASK 0x1F
+
+
 typedef struct {
 
   /**
@@ -87,6 +100,17 @@ typedef struct {
  * Current I2C module state.
  */
 static i2c_state_t i2c_state = {0};
+
+/**
+ * Ringbuffer for the I2C debug port implementation
+ */
+#define I2C_DEBUG_PORT_RINGBUFFER_SIZE 128
+static uint8_t i2c_debug_port_ringbuffer[I2C_DEBUG_PORT_RINGBUFFER_SIZE];
+static uint8_t i2c_debug_port_ringbuffer_read;
+static uint8_t i2c_debug_port_ringbuffer_write;
+/* Exit sequence for the I2C debug port == ESC + [24~ == F12 */
+static const uint8_t i2c_debug_port_exit_sequence[] = { 0x1B, 0x5B, 0x32, 0x34, 0x7E };
+static uint8_t i2c_debug_port_exit_sequence_index;
 
 #define SCL BP_CLK
 #define SCL_TRIS BP_CLK_DIR
@@ -178,6 +202,14 @@ static uint8_t hardware_i2c_read(void);
  *                             of a binary I/O command stream.
  */
 static void i2c_sniffer(bool interactive_mode);
+
+/**
+ * Implements the I2C serial debug port
+ *
+ * Provides a generic protocol for implementing a pass-through UART style interface
+ *
+ */
+static void i2c_debug_port();
 
 /**
  * Performs the bulk of the write-then-read I2C binary IO command.
@@ -478,6 +510,21 @@ void i2c_macro(unsigned int c) {
     MSG_SNIFFER_MESSAGE;
     MSG_ANY_KEY_TO_EXIT_PROMPT;
     i2c_sniffer(true);
+
+#ifdef BP_I2C_USE_HW_BUS
+    if (i2c_state.mode == I2C_TYPE_HARDWARE) {
+      /* Setup the hardware I2C module once more. */
+      hardware_i2c_setup();
+    }
+#endif /* BP_I2C_USE_HW_BUS */
+
+    break;
+
+  case 5:
+    i2c_cleanup();
+
+    MSG_I2C_DEBUG_PORT_MESSAGE;
+    i2c_debug_port();
 
 #ifdef BP_I2C_USE_HW_BUS
     if (i2c_state.mode == I2C_TYPE_HARDWARE) {
@@ -914,6 +961,321 @@ void i2c_sniffer(bool interactive_mode) {
   }
 }
 
+bool i2c_debug_port_ringbuffer_put(const uint8_t data) {
+  if (i2c_debug_port_ringbuffer_write == i2c_debug_port_ringbuffer_read) {
+    return false;
+  }
+  i2c_debug_port_ringbuffer[i2c_debug_port_ringbuffer_write] = data;
+  i2c_debug_port_ringbuffer_write++;
+  if (i2c_debug_port_ringbuffer_write == I2C_DEBUG_PORT_RINGBUFFER_SIZE) {
+    i2c_debug_port_ringbuffer_write = 0;
+  }
+  return true;
+}
+
+bool i2c_debug_port_ringbuffer_get(uint8_t *data) {
+  uint8_t index;
+
+  index = i2c_debug_port_ringbuffer_read + 1;
+  if (index == I2C_DEBUG_PORT_RINGBUFFER_SIZE) {
+    index = 0;
+  }
+  /* Check if buffer is empty */
+  if (index == i2c_debug_port_ringbuffer_write) {
+    return false;
+  }
+  i2c_debug_port_ringbuffer_read = index;
+  *data = i2c_debug_port_ringbuffer[i2c_debug_port_ringbuffer_read];
+  return true;
+}
+
+uint8_t i2c_debug_port_ringbuffer_count() {
+  if (i2c_debug_port_ringbuffer_write > i2c_debug_port_ringbuffer_read) {
+    return i2c_debug_port_ringbuffer_write - i2c_debug_port_ringbuffer_read - 1;
+  } else {
+    return (I2C_DEBUG_PORT_RINGBUFFER_SIZE - i2c_debug_port_ringbuffer_read) + i2c_debug_port_ringbuffer_write;
+  }
+}
+
+bool i2c_debug_port_ringbuffer_check_for_exit(const uint8_t last_data) {
+  if (i2c_debug_port_exit_sequence[i2c_debug_port_exit_sequence_index] == last_data) {
+    i2c_debug_port_exit_sequence_index++;
+    if (i2c_debug_port_exit_sequence_index >=
+        (sizeof(i2c_debug_port_exit_sequence) / sizeof(i2c_debug_port_exit_sequence[0]))) {
+      return true;
+    }
+  } else {
+    i2c_debug_port_exit_sequence_index = 0;
+  }
+  return false;
+}
+
+void i2c_debug_port() {
+  /* Setup UART ringbuffer. */
+  user_serial_ringbuffer_setup();
+
+  SDA_TRIS = INPUT;
+  SCL_TRIS = INPUT;
+  SCL = LOW;
+  SDA = LOW;
+
+  /* Enable change notice on SCL and SDA. */
+  BP_MOSI_CN = ON;
+  BP_CLK_CN = ON;
+
+  /* Clear the change interrupt flag. */
+  IFS1bits.CNIF = OFF;
+
+  bool old_sda = SDA;
+  bool old_scl = SCL;
+  bool new_sda = old_sda;
+  bool new_scl = old_scl;
+
+  bool collect_data = false;
+  bool transmit_data = false;
+  uint8_t data_bits = 0;
+  uint8_t data_value = 0;
+  bool begin_ack = false;
+  bool end_ack = false;
+  bool wait_for_master_ack = false;
+  bool next_byte_is_device_address = false;
+  bool next_byte_is_command_and_size = false;
+  bool processing_command = false;
+  uint8_t current_command = 0;
+  uint8_t current_data_size = 0;
+  uint8_t transferred_bytes = 0;
+
+  i2c_debug_port_ringbuffer_read = 0;
+  i2c_debug_port_ringbuffer_write = 1;
+  i2c_debug_port_exit_sequence_index = 0;
+
+  for (;;) {
+    if (!collect_data && !transmit_data && !IFS1bits.CNIF) {
+      /* Change notice interrupt triggered. */
+
+      /* Handle user I/O. */
+      user_serial_ringbuffer_flush();
+
+      if (user_serial_ready_to_read()) {
+        data_value = user_serial_read_byte();
+        i2c_debug_port_ringbuffer_put(data_value);
+        if (i2c_debug_port_ringbuffer_check_for_exit(data_value)) {
+          break;
+        }
+      }
+
+      continue;
+    }
+
+    /* Clear change notice interrupt flag. */
+    IFS1bits.CNIF = OFF;
+
+    /* Save I2C state. */
+    new_sda = SDA;
+    new_scl = SCL;
+
+    /* Sample on SCL rising edge. */
+    if (wait_for_master_ack && !old_scl && new_scl) {
+      wait_for_master_ack = false;
+      if (new_sda) {
+        /* master sent a NACK, stop all transmission */
+        collect_data = false;
+        transmit_data = false;
+        next_byte_is_device_address = false;
+        next_byte_is_command_and_size = false;
+        processing_command = false;
+        data_bits = 0;
+        transferred_bytes = 0;
+      }
+    } else if (collect_data && !end_ack && !old_scl && new_scl) {
+      if (data_bits < 7) {
+        data_value = (data_value << 1) | new_sda;
+        data_bits++;
+      } else {
+        data_value = (data_value << 1) | new_sda;
+        data_bits++;
+
+        /* Check if the I2C bus master is trying to contact us*/
+        if (next_byte_is_device_address) {
+          next_byte_is_device_address = false;
+          next_byte_is_command_and_size = false;
+          if ((data_value == I2C_DEBUG_PORT_WRITE_DEVICE_ADDRESS)         ||
+             (((current_command == I2C_DEBUG_PORT_READ_COMMAND)           ||
+               (current_command == I2C_DEBUG_PORT_READY_TO_READ_COMMAND)) &&
+              (data_value == I2C_DEBUG_PORT_READ_DEVICE_ADDRESS) && processing_command)) {
+            /* Set the flag to assert ACK on the next falling edge of SCL */
+            begin_ack = true;
+            if (data_value == I2C_DEBUG_PORT_WRITE_DEVICE_ADDRESS) {
+              next_byte_is_command_and_size = true;
+              processing_command = false;
+              current_command = 0;
+              current_data_size = 0;
+            } else if (data_value == I2C_DEBUG_PORT_READ_DEVICE_ADDRESS) {
+              collect_data = false;
+              transmit_data = true;
+            }
+            transferred_bytes = 0;
+          } else {
+            /* The I2C bus master is accessing a different device, we don't
+               need to listen anymore */
+            collect_data = false;
+          }
+        } else if (next_byte_is_command_and_size) {
+          next_byte_is_device_address = false;
+          next_byte_is_command_and_size = false;
+          processing_command = true;
+          current_command = ((data_value >> I2C_DEBUG_PORT_COMMAND_BIT_POSITION) & I2C_DEBUG_PORT_COMMAND_BIT_MASK);
+          current_data_size = (data_value & I2C_DEBUG_PORT_DATA_SIZE_BIT_MASK);
+          transferred_bytes = 0;
+          /* Set the flag to assert ACK on the next falling edge of SCL */
+          begin_ack = true;
+        } else if (processing_command) {
+          switch (current_command) {
+            case I2C_DEBUG_PORT_WRITE_COMMAND:
+              if (transferred_bytes < current_data_size) {
+                /* Set the flag to assert ACK on the next falling edge of SCL */
+                begin_ack = true;
+                transferred_bytes++;
+                user_serial_ringbuffer_append(data_value);
+              } else {
+                /* Finish transfer and NACK the last byte */
+                processing_command = false;
+                next_byte_is_device_address = false;
+                next_byte_is_command_and_size = false;
+              }
+              break;
+
+            /* No other commands require reading data from I2C, NACK the byte */
+            default:
+              break;  //@todo: After adding interactive mode, print an error here
+          }
+        } else {
+          next_byte_is_device_address = false;
+          next_byte_is_command_and_size = false;
+        }
+
+        /* Ready for next byte. */
+        data_bits = 0;
+      }
+    } else {
+      /* SCL falling edge. */
+      if (old_scl && !new_scl) {
+        if (transmit_data && end_ack) {
+          /* Configure the GPIO to high impedence to de-assert ACK */
+          SDA_TRIS = INPUT;
+          SDA = LOW;
+          begin_ack = false;
+          end_ack = false;
+        }
+        if (!begin_ack && !end_ack && !wait_for_master_ack &&
+            processing_command && transmit_data) {
+          if (data_bits == 0) {
+            switch (current_command) {
+              case I2C_DEBUG_PORT_READ_COMMAND:
+                if (transferred_bytes < current_data_size) {
+                  if(!i2c_debug_port_ringbuffer_get(&data_value)) {
+                    /* If the buffer is empty don't transmit */
+                    transmit_data = false;
+                    processing_command = false;
+                    SDA_TRIS = INPUT;
+                    SDA = LOW;
+                  } else {
+                    transferred_bytes++;
+                  }
+                }
+                break;
+
+              case I2C_DEBUG_PORT_READY_TO_READ_COMMAND:
+                if (transferred_bytes <= 0) {
+                  data_value = i2c_debug_port_ringbuffer_count ();
+                } else {
+                  transmit_data = false;
+                  processing_command = false;
+                  SDA_TRIS = INPUT;
+                  SDA = LOW;
+                }
+                break;
+
+              /* No other commands require writting data to I2C, exit transmit mode */
+              default:
+                transmit_data = false;
+                processing_command = false;
+                SDA_TRIS = INPUT;
+                SDA = LOW;
+                break;  //@todo: After adding interactive mode, print an error here
+            }
+          }
+          /* Check if we still want to transmit */
+          if (transmit_data) {
+            if (data_bits < 8) {
+              if (((data_value >> (7 - data_bits)) & 0x1) == 0) {
+                SDA = LOW;
+              } else {
+                SDA = HIGH;
+              }
+              SDA_TRIS = OUTPUT;
+              data_bits++;
+            } else {
+              wait_for_master_ack = true;
+              data_bits = 0;
+              SDA_TRIS = INPUT;
+              SDA = LOW;
+            }
+          }
+        }
+      }
+      /* Data transition. */
+      if (old_scl && new_scl) {
+        /* Start condition. */
+        if (old_sda && !new_sda) {
+          collect_data = true;
+          next_byte_is_device_address = true;
+          next_byte_is_command_and_size = false;
+          data_bits = 0;
+          transferred_bytes = 0;
+        } else {
+          /* Stop condition. */
+          if (!old_sda && new_sda) {
+            collect_data = false;
+            transmit_data = false;
+            next_byte_is_device_address = false;
+            next_byte_is_command_and_size = false;
+            processing_command = false;
+            data_bits = 0;
+            transferred_bytes = 0;
+          }
+        }
+      }
+    }
+    /* SCL falling edge. */
+    if (old_scl && !new_scl) {
+      /* Generate ACK signal if needed */
+      if (begin_ack) {
+        /* Configure the GPIO to output low to assert ACK on the data line */
+        SDA = LOW;
+        SDA_TRIS = OUTPUT;
+        begin_ack = false;
+        /* Set end_ack so that ACK will be released on the next falling edge */
+        end_ack = true;
+      } else if (end_ack) {
+        /* Configure the GPIO to high impedence to de-assert ACK */
+        SDA_TRIS = INPUT;
+        SDA = LOW;
+        begin_ack = false;
+        end_ack = false;
+      }
+    }
+
+    /* Save last I2C state. */
+    old_sda = new_sda;
+    old_scl = new_scl;
+  }
+
+  /* Disable I2C pin change interrupts. */
+  BP_MOSI_CN = OFF;
+  BP_CLK_CN = OFF;
+}
+
 void handle_pending_ack(const bool bus_bit) {
   if (i2c_state.mode == I2C_TYPE_SOFTWARE) {
     bitbang_write_bit(bus_bit);
@@ -1107,7 +1469,7 @@ void binary_io_enter_i2c_mode(void) {
 bool i2c_write_then_read(void) {
   /* Read the amount of bytes to write. */
   size_t bytes_to_write = user_serial_read_big_endian_word();
-  
+
   /* Read the amount of bytes to read. */
   size_t bytes_to_read = user_serial_read_big_endian_word();
 
@@ -1200,7 +1562,7 @@ bool i2c_write_then_read(void) {
   for (size_t counter = 0; counter < bytes_to_read; counter++) {
     /* Read byte from the I2C bus. */
     user_serial_transmit_character(bitbang_read_value());
-    
+
     /* Acknowledge read operation. */
     bitbang_write_bit(counter >= bytes_to_write ? HIGH : LOW);
   }
