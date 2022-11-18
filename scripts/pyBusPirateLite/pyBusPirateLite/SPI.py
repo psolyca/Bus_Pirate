@@ -78,3 +78,10 @@ class SPI(BBIO):
 		self.timeout(0.1)
 		return self.response(1, True)
 
+	def write_then_read_no_cs(self, w : bytes, read_count : int):
+		self.port.write(bytes([0b00000101,0,len(w),0,read_count]))
+		self.port.write(w)
+		res = self.response(1)
+		if not res:
+			return None
+		return self.response(read_count, True)
