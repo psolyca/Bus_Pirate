@@ -49,15 +49,12 @@ class BBIO:
 	
 	def BBmode(self):
 		self.port.flushInput();		
-		for i in range(20):
+		for _ in range(20):
 			self.port.write([0x00]);
 			r,w,e = select.select([self.port], [], [], 0.01);
 			if (r): break;
 
-		if self.response(5, True).decode('UTF-8') == "BBIO1":
-			return 1
-		else:
-			return 0
+		return 1 if self.response(5, True).decode('UTF-8') == "BBIO1" else 0
 
 	def reset(self):
 		self.port.write([0x00])
@@ -67,32 +64,27 @@ class BBIO:
 		self.response(5)
 		self.port.write([0x01])
 		self.timeout(0.1)
-		if self.response(4, True).decode("UTF-8") == "SPI1": return 1
-		else: return 0
+		return 1 if self.response(4, True).decode("UTF-8") == "SPI1" else 0
 
 	def enter_I2C(self):
 		self.port.write([0x02])
 		self.timeout(0.1)
-		if self.response(4, True).decode("UTF-8") == "I2C1": return 1
-		else: return 0
+		return 1 if self.response(4, True).decode("UTF-8") == "I2C1" else 0
 
 	def enter_UART(self):
 		self.port.write([0x03])
 		self.timeout(0.1)
-		if self.response(4, True).decode("UTF-8") == "ART1": return 1
-		else: return 0
+		return 1 if self.response(4, True).decode("UTF-8") == "ART1" else 0
 		
 	def enter_1wire(self):
 		self.port.write(chr(0x04))
 		self.timeout(0.1)
-		if self.response(4, True).decode("UTF-8") == "1W01": return 1
-		else: return 0
+		return 1 if self.response(4, True).decode("UTF-8") == "1W01" else 0
 		
 	def enter_rawwire(self):
 		self.port.write([0x05])
 		self.timeout(0.1)
-		if self.response(4, True).decode("UTF-8") == "RAW1": return 1
-		else: return 0
+		return 1 if self.response(4, True).decode("UTF-8") == "RAW1" else 0
 		
 	def resetBP(self):
 		self.reset()
@@ -118,8 +110,7 @@ class BBIO:
 	def response(self, byte_count=1, return_data=False):
 		data = self.port.read(byte_count)
 		if byte_count == 1 and return_data == False:
-			if data[0] == 0x01: return 1
-			else: return 0
+			return 1 if data[0] == 0x01 else 0
 		else:
 			return data
 

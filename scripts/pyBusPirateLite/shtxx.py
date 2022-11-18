@@ -10,7 +10,7 @@ from pyBusPirateLite.RAW_WIRE import *
 def sht_command(rw, data):
     ##clear shtxx interface
     rw.data_high()
-    for i in range(9):
+    for _ in range(9):
         rw.clk_tick()
     #start condition
     rw.data_high()
