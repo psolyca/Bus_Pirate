@@ -86,6 +86,7 @@ all: .all-post
 
 .all-pre:
 # Add your pre 'all' code here...
+VERSION:=${shell git rev-parse --short HEAD}
 
 .all-post: .all-impl
 # Add your post 'all' code here...
