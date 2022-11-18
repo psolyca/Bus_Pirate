@@ -451,6 +451,7 @@ void uart_stop(void) {
 
 bool uart_periodic_callback(void) {
   bool handled;
+  uint16_t received;
 
   handled = false;
   while (uart2_rx_ready()) {
@@ -475,7 +476,14 @@ bool uart_periodic_callback(void) {
       MSG_UART_FRAMING_ERROR;
     }
 
-    bp_write_formatted_integer(uart2_rx());
+    received = uart2_rx();
+    bp_write_formatted_integer(received);
+
+    // Support for 9-bit UART
+    if (mode_configuration.numbits == 9) {
+      user_serial_transmit_character(':');
+      user_serial_transmit_character(received & 0x100 ? '1' : '0');
+    }
 
     /* Overrun error? */
     if (U2STAbits.OERR) {

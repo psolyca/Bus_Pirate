@@ -851,6 +851,11 @@ void serviceuser(void) {
                (mode_configuration.numbits != 16))) {
             user_serial_transmit_character(';');
             bp_write_dec_byte(mode_configuration.numbits);
+            // Support for 9-bit UART
+            if (mode_configuration.numbits == 9) {
+              user_serial_transmit_character(':');
+              echo_state(received & 0x100);
+            }
           }
           bpSP;
         }
